@@ -65,9 +65,19 @@ detect_os() {
     info "System detected: $OS_TYPE ($ARCH)"
 }
 
+# Function to ensure scripts have execute permissions
+ensure_script_permissions() {
+    # Ensure all scripts in scripts/ directory have execute permissions
+    chmod +x "$SCRIPT_DIR"/*.sh 2>/dev/null || true
+    chmod +x "$PROJECT_ROOT/manage.sh" 2>/dev/null || true
+}
+
 # Function to check prerequisites
 check_prerequisites() {
     info "Checking prerequisites..."
+    
+    # Ensure scripts have execute permissions (Git doesn't preserve them)
+    ensure_script_permissions
     
     # Check Docker
     if ! command -v docker &> /dev/null; then
