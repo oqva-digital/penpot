@@ -28,6 +28,7 @@
 /*.sql
 /*.txt
 /*.yml
+!docker-compose.production.yml
 /*.zip
 /.clj-kondo/.cache
 /_dump
@@ -63,7 +64,9 @@
 /frontend/storybook-static/
 /frontend/target/
 /other/
-/scripts/
+# Allow our custom scripts in scripts/ directory
+!/scripts/*.sh
+!/scripts/*.md
 /telemetry/
 /tmp/
 /vendor/**/target
@@ -82,3 +85,7 @@ node_modules
 /render-wasm/target/
 /**/.yarn/*
 /.pnpm-store
+
+# Environment files with secrets
+.env.local
+.env.*.local

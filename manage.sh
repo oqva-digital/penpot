@@ -19,6 +19,49 @@ set -e
 
 ARCH=$(uname -m)
 
+# Function to convert path for Docker on Windows
+# On Windows (Git Bash/WSL), Docker needs Windows-style paths
+get_docker_path() {
+    local path="$1"
+    
+    # Try cygpath first (available in Git Bash and Cygwin) - this is the most reliable
+    if command -v cygpath &> /dev/null; then
+        local win_path=$(cygpath -w "$path" 2>/dev/null)
+        if [ -n "$win_path" ]; then
+            echo "$win_path"
+            return
+        fi
+    fi
+    
+    # Git Bash/MSYS on Windows - convert /c/... to C:\...
+    # Check for Windows environment
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]] || \
+       [[ -n "$MSYSTEM" && ("$MSYSTEM" == "MINGW64" || "$MSYSTEM" == "MINGW32") ]] || \
+       [[ "$(uname -s)" =~ MINGW ]]; then
+        if [[ "$path" =~ ^/([a-zA-Z])/ ]]; then
+            local drive="${BASH_REMATCH[1]}"
+            local rest="${path#/${drive}/}"
+            # Convert forward slashes to backslashes for Windows
+            rest="${rest//\//\\}"
+            echo "${drive}:\\${rest}"
+            return
+        fi
+    fi
+    
+    # WSL - convert /mnt/c/... to //c/... (Docker Desktop format)
+    if [[ -n "$WSL_DISTRO_NAME" ]] || ([[ -f /proc/version ]] && grep -qEi "(Microsoft|WSL)" /proc/version 2>/dev/null); then
+        if [[ "$path" =~ ^/mnt/([a-zA-Z])/ ]]; then
+            local drive="${BASH_REMATCH[1]}"
+            local rest="${path#/mnt/${drive}/}"
+            echo "//${drive}/${rest}"
+            return
+        fi
+    fi
+    
+    # Linux/macOS - use as is
+    echo "$path"
+}
+
 if [[ "$ARCH" == "x86_64" || "$ARCH" == "amd64" || "$ARCH" == "i386" || "$ARCH" == "i686" ]]; then
     ARCH="amd64"
 elif [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
@@ -129,16 +172,22 @@ function run-devenv-shell {
 
 function run-devenv-isolated-shell {
     docker volume create ${DEVENV_PNAME}_user_data;
+    
+    # Get current directory and convert for Docker on Windows if needed
+    local current_dir=$(pwd)
+    local docker_path=$(get_docker_path "$current_dir")
+    
+    # Use -v syntax for volumes on Windows for better compatibility
+    local volume_name="${DEVENV_PNAME}_user_data"
     docker run -ti --rm \
-           --mount source=${DEVENV_PNAME}_user_data,type=volume,target=/home/penpot/ \
-           --mount source=`pwd`,type=bind,target=/home/penpot/penpot \
+           -v "${volume_name}:/home/penpot" \
+           --mount "type=bind,source=$docker_path,target=/home/penpot/penpot" \
            -e EXTERNAL_UID=$CURRENT_USER_ID \
            -e BUILD_STORYBOOK=$BUILD_STORYBOOK \
            -e BUILD_WASM=$BUILD_WASM \
            -e SHADOWCLJS_EXTRA_PARAMS=$SHADOWCLJS_EXTRA_PARAMS \
            -e JAVA_OPTS="$JAVA_OPTS" \
-           -w /home/penpot/penpot/$1 \
-           $DEVENV_IMGNAME:latest sudo -EH -u penpot bash
+           $DEVENV_IMGNAME:latest sh -c "cd /home/penpot/penpot/$1 && sudo -EH -u penpot bash"
 }
 
 function build-imagemagick-docker-image {
@@ -174,16 +223,32 @@ function build {
 
     pull-devenv-if-not-exists;
     docker volume create ${DEVENV_PNAME}_user_data;
+    
+    # Get current directory and convert for Docker on Windows if needed
+    local current_dir=$(pwd)
+    local docker_path=$(get_docker_path "$current_dir")
+    
+    # On Windows, verify the path is accessible to Docker
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]] || [[ -n "$MSYSTEM" ]]; then
+        if [[ ! "$docker_path" =~ ^[A-Z]:\\ ]]; then
+            echo "Warning: Path conversion may have failed. Original: $current_dir, Converted: $docker_path"
+            echo "On Windows, ensure Docker Desktop has access to the drive containing your project."
+            echo "Check Docker Desktop Settings > Resources > File Sharing"
+        fi
+    fi
+    
+    # Use sh -c with cd to avoid Windows path interpretation issues with -w/--workdir
+    # Use -v syntax for volumes on Windows for better compatibility
+    local volume_name="${DEVENV_PNAME}_user_data"
     docker run -t --rm \
-           --mount source=${DEVENV_PNAME}_user_data,type=volume,target=/home/penpot/ \
-           --mount source=`pwd`,type=bind,target=/home/penpot/penpot \
+           -v "${volume_name}:/home/penpot" \
+           --mount "type=bind,source=$docker_path,target=/home/penpot/penpot" \
            -e EXTERNAL_UID=$CURRENT_USER_ID \
            -e BUILD_STORYBOOK=$BUILD_STORYBOOK \
            -e BUILD_WASM=$BUILD_WASM \
            -e SHADOWCLJS_EXTRA_PARAMS=$SHADOWCLJS_EXTRA_PARAMS \
            -e JAVA_OPTS="$JAVA_OPTS" \
-           -w /home/penpot/penpot/$1 \
-           $DEVENV_IMGNAME:latest sudo -EH -u penpot ./scripts/$script $version
+           $DEVENV_IMGNAME:latest sh -c "cd /home/penpot/penpot/$1 && sudo -EH -u penpot ./scripts/$script $version"
 
     echo ">> build end: $1"
 }

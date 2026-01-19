@@ -94,6 +94,42 @@ Penpot brings design systems to code-minded teams: a single source of truth with
 Penpot is the only design & prototype platform that is deployment agnostic. You can use it in our [SAAS](https://design.penpot.app) or deploy it anywhere.
 
 Learn how to install it with Docker, Kubernetes, Elestio or other options on [our website](https://penpot.app/self-host).
+
+### Self-Hosted Setup (Custom Fork) ##
+
+This repository includes automated scripts for installing and configuring a self-hosted Penpot instance with support for deep customizations.
+
+**Quick Installation:**
+
+```bash
+# Clone the repository
+git clone https://github.com/YOUR-ORG/penpot.git
+cd penpot
+
+# Run automated setup (same command for all OS)
+# On Windows: use Git Bash or WSL
+chmod +x scripts/*.sh
+./scripts/setup.sh
+```
+
+> **Note**: On Windows, use Git Bash or WSL to run the scripts. See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
+
+**Complete Documentation:**
+
+- 📖 [Installation Guide](SETUP.md) - Detailed installation and configuration instructions
+- 🎨 [Customization Guide](CUSTOMIZATION.md) - How to customize the source code
+- 🔄 [Updates Guide](UPDATES.md) - Synchronization with official repository
+- 🔌 [Endpoints Documentation](ENDPOINTS.md) - Available APIs and URLs
+
+**Features:**
+
+- ✅ Automated setup with environment detection (Linux/macOS/Windows with Docker)
+- ✅ Automatic build of custom Docker images
+- ✅ Cloudflare Tunnel integration (no open ports)
+- ✅ Automatic generation of secure keys and passwords
+- ✅ Easy synchronization with upstream
+- ✅ Complete documentation in English
+
 <br />
 
 <p align="center">
