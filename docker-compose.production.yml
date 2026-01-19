@@ -30,7 +30,7 @@ x-flags: &penpot-flags
   PENPOT_FLAGS: ${PENPOT_FLAGS:-enable-login-with-password enable-smtp enable-prepl-server enable-registration}
 
 x-uri: &penpot-public-uri
-  PENPOT_PUBLIC_URI: ${PENPOT_PUBLIC_URI:-https://penpot.example.com}
+  PENPOT_PUBLIC_URI: ${PENPOT_PUBLIC_URI:-https://penpot.mush.so}
 
 x-body-size: &penpot-http-body-size
   # Max body size (30MiB); Used for plain requests, should never be
