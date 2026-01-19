@@ -23,6 +23,7 @@
 .shadow-cljs
 /*.jpg
 /*.md
+!PROXY_SETUP.md
 /*.png
 /*.svg
 /*.sql
