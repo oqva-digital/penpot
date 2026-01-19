@@ -246,15 +246,38 @@ function build {
     # Use sh -c with cd to avoid Windows path interpretation issues with -w/--workdir
     # Use -v syntax for volumes on Windows for better compatibility
     local volume_name="${DEVENV_PNAME}_user_data"
-    docker run -t --rm \
-           -v "${volume_name}:/home/penpot" \
-           --mount "type=bind,source=$docker_path,target=/home/penpot/penpot" \
-           -e EXTERNAL_UID=$CURRENT_USER_ID \
-           -e BUILD_STORYBOOK=$BUILD_STORYBOOK \
-           -e BUILD_WASM=$BUILD_WASM \
-           -e SHADOWCLJS_EXTRA_PARAMS=$SHADOWCLJS_EXTRA_PARAMS \
-           -e JAVA_OPTS="$JAVA_OPTS" \
-           $DEVENV_IMGNAME:latest sh -c "cd /home/penpot/penpot/$1 && sudo -EH -u penpot ./scripts/$script $version"
+    
+    # If running as root on host, fix permissions before build and use root in container
+    # This avoids permission issues when mounting host directories
+    local docker_user=""
+    if [ "$(id -u)" = "0" ]; then
+        # Running as root: fix permissions on host and run as root in container
+        # Fix permissions for directories that will be written during build
+        chmod -R 777 "$docker_path/$1/node_modules" "$docker_path/$1/target" 2>/dev/null || true
+        mkdir -p "$docker_path/$1/node_modules" "$docker_path/$1/target" 2>/dev/null || true
+        chmod -R 777 "$docker_path/$1/node_modules" "$docker_path/$1/target" 2>/dev/null || true
+        # Run as root in container to avoid permission issues
+        docker run -t --rm \
+               -v "${volume_name}:/home/penpot" \
+               --mount "type=bind,source=$docker_path,target=/home/penpot/penpot" \
+               -e BUILD_STORYBOOK=$BUILD_STORYBOOK \
+               -e BUILD_WASM=$BUILD_WASM \
+               -e SHADOWCLJS_EXTRA_PARAMS=$SHADOWCLJS_EXTRA_PARAMS \
+               -e JAVA_OPTS="$JAVA_OPTS" \
+               --user root \
+               $DEVENV_IMGNAME:latest sh -c "cd /home/penpot/penpot/$1 && ./scripts/$script $version"
+    else
+        # Running as regular user: use normal flow
+        docker run -t --rm \
+               -v "${volume_name}:/home/penpot" \
+               --mount "type=bind,source=$docker_path,target=/home/penpot/penpot" \
+               -e EXTERNAL_UID=$CURRENT_USER_ID \
+               -e BUILD_STORYBOOK=$BUILD_STORYBOOK \
+               -e BUILD_WASM=$BUILD_WASM \
+               -e SHADOWCLJS_EXTRA_PARAMS=$SHADOWCLJS_EXTRA_PARAMS \
+               -e JAVA_OPTS="$JAVA_OPTS" \
+               $DEVENV_IMGNAME:latest sh -c "cd /home/penpot/penpot/$1 && sudo -EH -u penpot ./scripts/$script $version"
+    fi
 
     echo ">> build end: $1"
 }

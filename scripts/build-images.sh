@@ -76,8 +76,28 @@ if [ -d "bundles/frontend" ] && [ -d "bundles/backend" ] && [ -d "bundles/export
     fi
 fi
 
+# Fix permissions for build directories (needed when running as root)
+fix_build_permissions() {
+    info "Fixing permissions for build directories..."
+    # Make directories writable by group (for UID 1000 in container)
+    find frontend backend exporter -type d -name "node_modules" -o -name "target" -o -name ".shadow-cljs" 2>/dev/null | while read -r dir; do
+        if [ -d "$dir" ]; then
+            chmod -R u+w,g+w "$dir" 2>/dev/null || true
+        fi
+    done
+    # Pre-create and fix permissions for directories that will be created during build
+    mkdir -p frontend/node_modules backend/target exporter/target frontend/target 2>/dev/null || true
+    chmod -R 775 frontend/node_modules backend/target exporter/target frontend/target 2>/dev/null || true
+    # Fix ownership if running as root (make it accessible to UID 1000)
+    if [ "$(id -u)" = "0" ]; then
+        # Use chmod to make writable by all, or chown to a group that UID 1000 can access
+        chmod -R 777 frontend/node_modules backend/target exporter/target frontend/target 2>/dev/null || true
+    fi
+}
+
 # Build bundles
 if [ "$BUILD_BUNDLES" = "true" ]; then
+    fix_build_permissions
     info "Building bundles..."
     
     info "Building frontend bundle..."
