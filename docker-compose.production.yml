@@ -1,0 +1,272 @@
+## Docker Compose for Penpot Self-Hosted Production
+## Based on docker/images/docker-compose.yaml with additions for Cloudflare Tunnel
+
+## Common flags:
+# demo-users
+# email-verification
+# log-emails
+# log-invitation-tokens
+# login-with-github
+# login-with-gitlab
+# login-with-google
+# login-with-ldap
+# login-with-oidc
+# login-with-password
+# prepl-server
+# registration
+# secure-session-cookies
+# smtp
+# smtp-debug
+# telemetry
+# webhooks
+##
+## You can read more about all available flags and other
+## environment variables here:
+## https://help.penpot.app/technical-guide/configuration/#penpot-configuration
+#
+# WARNING: If you're exposing Penpot to the internet, you should remove the flags
+# 'disable-secure-session-cookies' and 'disable-email-verification'
+x-flags: &penpot-flags
+  PENPOT_FLAGS: ${PENPOT_FLAGS:-enable-login-with-password enable-smtp enable-prepl-server enable-registration}
+
+x-uri: &penpot-public-uri
+  PENPOT_PUBLIC_URI: ${PENPOT_PUBLIC_URI:-https://penpot.example.com}
+
+x-body-size: &penpot-http-body-size
+  # Max body size (30MiB); Used for plain requests, should never be
+  # greater than multi-part size
+  PENPOT_HTTP_SERVER_MAX_BODY_SIZE: ${PENPOT_HTTP_SERVER_MAX_BODY_SIZE:-31457280}
+
+  # Max multipart body size (350MiB)
+  PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE: ${PENPOT_HTTP_SERVER_MAX_MULTIPART_BODY_SIZE:-367001600}
+
+## Penpot SECRET KEY. It serves as a master key from which other keys for subsystems
+## (eg http sessions, or invitations) are derived.
+##
+## We recommend to use a truly randomly generated
+## 512 bits base64 encoded string here. You can generate one with:
+##
+## python3 -c "import secrets; print(secrets.token_urlsafe(64))"
+x-secret-key: &penpot-secret-key
+  PENPOT_SECRET_KEY: ${PENPOT_SECRET_KEY:-change-this-insecure-key}
+
+networks:
+  penpot:
+    driver: bridge
+
+volumes:
+  penpot_postgres_v15:
+    driver: local
+  penpot_assets:
+    driver: local
+
+services:
+  penpot-frontend:
+    image: "penpotapp/frontend:${PENPOT_VERSION:-latest}"
+    restart: always
+    container_name: penpot-frontend
+
+    volumes:
+      - penpot_assets:/opt/data/assets
+
+    depends_on:
+      penpot-backend:
+        condition: service_started
+      penpot-exporter:
+        condition: service_started
+
+    networks:
+      - penpot
+
+    ports:
+      - "${PENPOT_FRONTEND_PORT:-9001}:8080"
+
+    environment:
+      << : [*penpot-flags, *penpot-http-body-size]
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  penpot-backend:
+    image: "penpotapp/backend:${PENPOT_VERSION:-latest}"
+    restart: always
+    container_name: penpot-backend
+
+    volumes:
+      - penpot_assets:/opt/data/assets
+
+    depends_on:
+      penpot-postgres:
+        condition: service_healthy
+      penpot-valkey:
+        condition: service_healthy
+
+    networks:
+      - penpot
+
+    ## Configuration environment variables for the backend container.
+
+    environment:
+      << : [*penpot-flags, *penpot-public-uri, *penpot-http-body-size, *penpot-secret-key]
+
+      ## Database connection parameters. Don't touch them unless you are using custom
+      ## postgresql connection parameters.
+
+      PENPOT_DATABASE_URI: ${PENPOT_DATABASE_URI:-postgresql://penpot-postgres/penpot}
+      PENPOT_DATABASE_USERNAME: ${PENPOT_DATABASE_USERNAME:-penpot}
+      PENPOT_DATABASE_PASSWORD: ${PENPOT_DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-penpot}}
+
+      ## Valkey (or previously redis) is used for the websockets notifications. Don't touch
+      ## unless the valkey container has different parameters or different name.
+
+      PENPOT_REDIS_URI: ${PENPOT_REDIS_URI:-redis://penpot-valkey/0}
+
+      ## Default configuration for assets storage: using filesystem based with all files
+      ## stored in a docker volume.
+
+      PENPOT_OBJECTS_STORAGE_BACKEND: ${PENPOT_OBJECTS_STORAGE_BACKEND:-fs}
+      PENPOT_OBJECTS_STORAGE_FS_DIRECTORY: /opt/data/assets
+
+      ## Also can be configured to use a S3 compatible storage.
+
+      # AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      # AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      # PENPOT_ASSETS_STORAGE_BACKEND: assets-s3
+      # PENPOT_STORAGE_ASSETS_S3_ENDPOINT: ${PENPOT_STORAGE_ASSETS_S3_ENDPOINT:-}
+      # PENPOT_STORAGE_ASSETS_S3_BUCKET: ${PENPOT_STORAGE_ASSETS_S3_BUCKET:-}
+
+      ## Telemetry. When enabled, a periodical process will send anonymous data about this
+      ## instance. Telemetry data will enable us to learn how the application is used,
+      ## based on real scenarios. If you want to help us, please leave it enabled. You can
+      ## audit what data we send with the code available on github.
+
+      PENPOT_TELEMETRY_ENABLED: ${PENPOT_TELEMETRY_ENABLED:-true}
+      PENPOT_TELEMETRY_REFERER: ${PENPOT_TELEMETRY_REFERER:-self-hosted}
+
+      ## Example SMTP/Email configuration. By default, emails are sent to the mailcatch
+      ## service, but for production usage it is recommended to setup a real SMTP
+      ## provider. Emails are used to confirm user registrations & invitations.
+
+      PENPOT_SMTP_DEFAULT_FROM: ${PENPOT_SMTP_DEFAULT_FROM:-no-reply@example.com}
+      PENPOT_SMTP_DEFAULT_REPLY_TO: ${PENPOT_SMTP_DEFAULT_REPLY_TO:-no-reply@example.com}
+      PENPOT_SMTP_HOST: ${PENPOT_SMTP_HOST:-penpot-mailcatch}
+      PENPOT_SMTP_PORT: ${PENPOT_SMTP_PORT:-1025}
+      PENPOT_SMTP_USERNAME: ${PENPOT_SMTP_USERNAME:-}
+      PENPOT_SMTP_PASSWORD: ${PENPOT_SMTP_PASSWORD:-}
+      PENPOT_SMTP_TLS: ${PENPOT_SMTP_TLS:-false}
+      PENPOT_SMTP_SSL: ${PENPOT_SMTP_SSL:-false}
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6060/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  penpot-exporter:
+    image: "penpotapp/exporter:${PENPOT_VERSION:-latest}"
+    restart: always
+    container_name: penpot-exporter
+
+    depends_on:
+      penpot-valkey:
+        condition: service_healthy
+
+    networks:
+      - penpot
+
+    environment:
+      << : [*penpot-secret-key]
+      # Don't touch it; this uses an internal docker network to
+      # communicate with the frontend.
+      PENPOT_PUBLIC_URI: http://penpot-frontend:8080
+
+      ## Valkey (or previously Redis) is used for the websockets notifications.
+      PENPOT_REDIS_URI: ${PENPOT_REDIS_URI:-redis://penpot-valkey/0}
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6061/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  penpot-postgres:
+    image: "postgres:15"
+    restart: always
+    container_name: penpot-postgres
+    stop_signal: SIGINT
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U penpot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    volumes:
+      - penpot_postgres_v15:/var/lib/postgresql/data
+
+    networks:
+      - penpot
+
+    environment:
+      - POSTGRES_INITDB_ARGS=--data-checksums
+      - POSTGRES_DB=${POSTGRES_DB:-penpot}
+      - POSTGRES_USER=${POSTGRES_USER:-penpot}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-penpot}
+
+  penpot-valkey:
+    image: valkey/valkey:8.1
+    restart: always
+    container_name: penpot-valkey
+
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+    networks:
+      - penpot
+
+    environment:
+      # You can increase the max memory size if you have sufficient resources,
+      # although this should not be necessary.
+      - VALKEY_EXTRA_FLAGS=--maxmemory ${VALKEY_MAXMEMORY:-128mb} --maxmemory-policy volatile-lfu
+
+  ## A mailcatch service, used as temporal SMTP server. You can access via HTTP to the
+  ## port 1080 for read all emails the penpot platform has sent. Should be only used as a
+  ## temporal solution while no real SMTP provider is configured.
+
+  penpot-mailcatch:
+    image: sj26/mailcatcher:latest
+    restart: always
+    container_name: penpot-mailcatch
+    expose:
+      - '1025'
+    ports:
+      - "${MAILCATCH_PORT:-1080}:1080"
+    networks:
+      - penpot
+
+  ## Cloudflare Tunnel - Exposes the application via Cloudflare without opening ports on the server
+  ## To use, configure CLOUDFLARE_TUNNEL_TOKEN in .env.local
+  ## The token can be obtained at: https://one.dash.cloudflare.com/ > Zero Trust > Access > Tunnels
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    container_name: penpot-cloudflared
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    networks:
+      - penpot
+    depends_on:
+      - penpot-frontend
+    # cloudflared doesn't need healthcheck as it connects to Cloudflare
+    # If token is not configured, container will fail to start (expected behavior)
