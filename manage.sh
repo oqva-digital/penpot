@@ -4,7 +4,13 @@ export ORGANIZATION="penpotapp";
 export DEVENV_IMGNAME="$ORGANIZATION/devenv";
 export DEVENV_PNAME="penpotdev";
 
-export CURRENT_USER_ID=$(id -u);
+# Get current user ID, but use 1000 if root (UID 0) to avoid conflicts in containers
+CURRENT_USER_ID_RAW=$(id -u);
+if [ "$CURRENT_USER_ID_RAW" = "0" ]; then
+    export CURRENT_USER_ID=1000;
+else
+    export CURRENT_USER_ID=$CURRENT_USER_ID_RAW;
+fi
 export CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD);
 
 export IMAGEMAGICK_VERSION=7.1.2-0
