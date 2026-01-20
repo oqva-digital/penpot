@@ -138,6 +138,18 @@ get_env_var() {
     fi
 }
 
+# Function to check and run initial backup if needed
+check_initial_backup() {
+    if [ -f "$SCRIPT_DIR/backup.sh" ]; then
+        info "Checking if initial backup is needed..."
+        if bash "$SCRIPT_DIR/backup.sh" --check-initial; then
+            success "Initial backup completed"
+        else
+            warning "Initial backup check completed (may have been skipped if recent backup exists)"
+        fi
+    fi
+}
+
 # Function to configure Cloudflare Tunnel
 setup_cloudflare() {
     info "Configuring Cloudflare Tunnel..."
@@ -341,6 +353,7 @@ main() {
     setup_cloudflare
     build_images "$SKIP_BUILD"
     start_services
+    check_initial_backup
     show_summary
 }
 
