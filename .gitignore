@@ -81,3 +81,6 @@ node_modules
 /render-wasm/target/
 /**/.yarn/*
 /.pnpm-store
+
+# Arquivo de configuração local (não deve ser commitado)
+.env.local
