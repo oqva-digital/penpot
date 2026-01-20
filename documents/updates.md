@@ -120,7 +120,7 @@ git commit -m "Resolve conflicts from upstream merge"
 
 ### 4. Test Updates
 
-#### In Development Environment
+#### In Development Environment (local)
 
 ```bash
 # Merge into develop
@@ -134,7 +134,39 @@ git merge main
 ./scripts/setup.sh --skip-build
 ```
 
-#### Test Checklist
+#### In Staging Environment
+
+Staging should be as close as possible to production (same Docker version, same type of server, same environment variables – except for domains). A typical flow:
+
+```bash
+# 1. Deploy the develop branch to the staging environment
+git checkout develop
+git pull origin develop
+
+# (on the staging server)
+git checkout develop
+git pull origin develop
+
+# 2. Backup the database/volumes on staging before testing the update
+./scripts/backup.sh   # if available, or use the backup commands from SETUP.md
+
+# 3. Rebuild images and restart only on staging
+./scripts/build-images.sh
+docker compose -f docker-compose.production.yml --env-file .env.local up -d
+
+# 4. Validate critical functionalities in staging
+```
+
+Staging checklist:
+
+- [ ] Login, account creation and invitation flows work
+- [ ] Project/file creation and editing work
+- [ ] Exports work (PDF/SVG, etc.)
+- [ ] WebSocket / real-time collaboration works
+- [ ] Fork-specific customizations behave as expected
+- [ ] No relevant errors in logs (`docker compose logs`)
+
+#### Test Checklist (antes de ir para produção)
 
 - [ ] Application starts without errors
 - [ ] Login works
